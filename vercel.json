@@ -1,0 +1,40 @@
+{
+  "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/bemvindo",
+      "destination": "/bemvindo/",
+      "permanent": true
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "grupomotorista.com.br" }],
+      "destination": "/bemvindo/",
+      "permanent": false
+    },
+    {
+      "source": "/index.html",
+      "has": [{ "type": "host", "value": "grupomotorista.com.br" }],
+      "destination": "/bemvindo/",
+      "permanent": false
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "tyta.grupomotorista.com.br" }],
+      "destination": "/bemvindo/",
+      "permanent": false
+    },
+    {
+      "source": "/index.html",
+      "has": [{ "type": "host", "value": "tyta.grupomotorista.com.br" }],
+      "destination": "/bemvindo/",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.grupomotorista.com.br" }],
+      "destination": "https://grupomotorista.com.br/:path*",
+      "permanent": true
+    }
+  ]
+}

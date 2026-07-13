@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://grupomotorista.com.br/sitemap.xml
+Sitemap: https://tyta-app.vercel.app/sitemap.xml
