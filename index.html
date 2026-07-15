@@ -269,25 +269,41 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px 24p
 
 <script>
 (function () {
-  function fillTrack(track) {
-    if (!track || track.dataset.filled === '1') return;
-    const originals = Array.from(track.children);
-    if (!originals.length) return;
-    // Keep cloning until content is at least ~3.2x viewport — kills empty vacuum on wide screens
-    let guard = 0;
-    while (track.scrollWidth < Math.max(window.innerWidth, 800) * 3.2 && guard < 40) {
+  var baseByTrack = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+
+  function getBaseNodes(track) {
+    if (baseByTrack && baseByTrack.has(track)) return baseByTrack.get(track);
+    if (track._mqBase) return track._mqBase;
+    var base = Array.from(track.children).map(function (node) { return node.cloneNode(true); });
+    if (baseByTrack) baseByTrack.set(track, base);
+    else track._mqBase = base;
+    return base;
+  }
+
+  function fillTrack(track, force) {
+    if (!track) return;
+    if (!force && track.dataset.filled === '1') return;
+    var base = getBaseNodes(track);
+    if (!base.length) return;
+
+    // Rebuild from original items only — prevents clone pile-up on mobile resize
+    track.innerHTML = '';
+    base.forEach(function (node) { track.appendChild(node.cloneNode(true)); });
+
+    var originals = Array.from(track.children);
+    var enough = Math.max(window.innerWidth, 800) * 3.2;
+    var guard = 0;
+    while (track.scrollWidth < enough && guard < 40) {
       originals.forEach(function (node) {
-        const clone = node.cloneNode(true);
+        var clone = node.cloneNode(true);
         clone.setAttribute('aria-hidden', 'true');
         clone.tabIndex = -1;
         track.appendChild(clone);
       });
       guard++;
     }
-    // Ensure even number of original groups for -50% loop by duplicating whole set once more if needed
-    const half = track.scrollWidth;
     originals.forEach(function (node) {
-      const clone = node.cloneNode(true);
+      var clone = node.cloneNode(true);
       clone.setAttribute('aria-hidden', 'true');
       clone.tabIndex = -1;
       track.appendChild(clone);
@@ -297,36 +313,55 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px 24p
   }
 
   function setupDrag(row) {
-    const track = row.querySelector('.marquee-track');
+    if (row.dataset.dragReady === '1') return;
+    row.dataset.dragReady = '1';
+    var track = row.querySelector('.marquee-track');
     if (!track) return;
     fillTrack(track);
-    let dragging = false;
-    let startX = 0;
-    let base = 0;
-    let moved = false;
-    let blockClick = false;
+    var dragging = false;
+    var startX = 0;
+    var startY = 0;
+    var base = 0;
+    var moved = false;
+    var blockClick = false;
+    var axis = null;
 
     function currentX() {
-      const t = getComputedStyle(track).transform;
+      var t = getComputedStyle(track).transform;
       if (!t || t === 'none') return 0;
-      const m = t.match(/matrix\(([^)]+)\)/);
+      var m = t.match(/matrix\(([^)]+)\)/);
       if (!m) return 0;
       return parseFloat(m[1].split(',')[4]) || 0;
     }
 
-    function onDown(clientX) {
+    function onDown(clientX, clientY) {
       dragging = true;
       moved = false;
       blockClick = false;
-      row.classList.add('is-paused');
+      axis = null;
       startX = clientX;
+      startY = clientY == null ? 0 : clientY;
       base = currentX();
+      row.classList.add('is-paused');
       track.style.animation = 'none';
       track.style.transform = 'translateX(' + base + 'px)';
     }
-    function onMove(clientX) {
+    function onMove(clientX, clientY) {
       if (!dragging) return;
-      const dx = clientX - startX;
+      var dx = clientX - startX;
+      var dy = (clientY == null ? startY : clientY) - startY;
+      if (axis == null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+        axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+        if (axis === 'y') {
+          // Vertical page scroll: release without restarting the CSS animation loop
+          dragging = false;
+          track.style.animation = '';
+          track.style.transform = '';
+          row.classList.remove('is-paused');
+          return;
+        }
+      }
+      if (axis !== 'x') return;
       if (Math.abs(dx) > 6) moved = true;
       track.style.transform = 'translateX(' + (base + dx) + 'px)';
     }
@@ -334,37 +369,37 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px 24p
       if (!dragging) return;
       dragging = false;
       if (moved) blockClick = true;
-      // Normalize into loop range then restore CSS animation roughly from new offset via pause only
-      let x = currentX();
-      const loop = parseFloat(track.dataset.loopWidth || '0') || (track.scrollWidth / 2);
+      var x = currentX();
+      var loop = parseFloat(track.dataset.loopWidth || '0') || (track.scrollWidth / 2);
       if (loop > 0) {
         while (x <= -loop) x += loop;
         while (x > 0) x -= loop;
       }
       track.style.transform = 'translateX(' + x + 'px)';
-      // Resume seamless CSS loop from nearest keyframe by clearing inline and restarting
       void track.offsetWidth;
       track.style.animation = '';
       track.style.transform = '';
       row.classList.remove('is-paused');
+      axis = null;
       setTimeout(function () { blockClick = false; }, 40);
     }
 
     row.addEventListener('mousedown', function (e) {
       if (e.button !== 0) return;
-      onDown(e.clientX);
+      onDown(e.clientX, e.clientY);
     });
-    window.addEventListener('mousemove', function (e) { onMove(e.clientX); });
+    window.addEventListener('mousemove', function (e) { onMove(e.clientX, e.clientY); });
     window.addEventListener('mouseup', onUp);
     row.addEventListener('touchstart', function (e) {
       if (!e.touches[0]) return;
-      onDown(e.touches[0].clientX);
+      onDown(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: true });
     row.addEventListener('touchmove', function (e) {
       if (!e.touches[0]) return;
-      onMove(e.touches[0].clientX);
+      onMove(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: true });
     row.addEventListener('touchend', onUp);
+    row.addEventListener('touchcancel', onUp);
     row.addEventListener('click', function (e) {
       if (blockClick) {
         e.preventDefault();
@@ -378,8 +413,18 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:28px 24p
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+
+  var lastWidth = window.innerWidth;
+  var resizeTimer = null;
   window.addEventListener('resize', function () {
-    document.querySelectorAll('.marquee-track').forEach(function (t) { t.dataset.filled = '0'; fillTrack(t); });
+    // Ignore mobile browser chrome show/hide (height-only resize) that used to re-clone forever
+    var w = window.innerWidth;
+    if (w === lastWidth) return;
+    lastWidth = w;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      document.querySelectorAll('.marquee-track').forEach(function (t) { fillTrack(t, true); });
+    }, 200);
   });
 })();
 </script>
